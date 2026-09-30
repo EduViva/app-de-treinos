@@ -36,4 +36,10 @@ Projeto `sgqsriitdwmpylghrytx` (Pessoal). As quatro migrations desta pasta já e
 
 O banco é multiusuário: cada pessoa só enxerga os próprios registros, e o catálogo público é somente leitura.
 
-O app ainda salva só no aparelho. A sincronização com o Supabase é o próximo passo (veja `CLAUDE.md`).
+## Conta e sincronização
+
+Em **Progresso > Corpo > Conta** o app pede o e-mail e manda um link mágico (sem senha). Depois do login, os registros do aparelho são enviados ao Supabase com `import_app_backup` (idempotente), de forma automática alguns segundos depois de cada alteração e quando a rede volta. Tudo continua salvo no `localStorage` primeiro.
+
+**Configuração única no Supabase** (Authentication > URL Configuration): coloque o endereço do app no GitHub Pages em *Site URL* e em *Redirect URLs*. Sem isso o link do e-mail não volta para o app.
+
+Ainda não existe o caminho de volta (baixar do banco para um aparelho novo). Por enquanto, um aparelho novo recebe os dados via **Restaurar**.

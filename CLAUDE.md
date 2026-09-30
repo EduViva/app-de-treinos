@@ -37,7 +37,7 @@ App pessoal de treino do Eduardo (25 anos, treina na Champion Body Gravataí). H
 
 ## Próximos passos
 1. Publicar no GitHub Pages (instruções no README).
-2. Login com Supabase Auth (link mágico por e-mail) e botão "Entrar para sincronizar".
-3. No primeiro login, chamar `import_app_backup` com o conteúdo do localStorage.
-4. Sincronização offline-first: continuar salvando no localStorage e enviar/receber alterações por `updated_at` quando houver rede.
+2. ~~Login com link mágico~~ feito (fetch direto ao GoTrue, sessão em `treino-eduardo-v2-auth`).
+3. ~~Envio ao banco~~ feito: `syncNow()` chama `import_app_backup` após login e a cada `save()` (debounce de 8 s). Falta configurar Site URL/Redirect URLs no Supabase Auth.
+4. Falta o caminho de volta: baixar do banco para um aparelho novo e resolver conflitos por `updated_at` (hoje o envio é só de ida).
 5. Depois: gráficos lendo as visões do banco e telas para criar exercícios e fichas próprias.

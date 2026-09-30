@@ -532,7 +532,7 @@ let store={v:2,startDate:null,weights:[],sessions:{}}, storageOK=true;
 try{const raw=localStorage.getItem(KEY);if(raw){const o=JSON.parse(raw);if(o&&typeof o==='object')store=Object.assign(store,o)}}catch(e){storageOK=false}
 if(!store.sessions)store.sessions={}; if(!store.weights)store.weights=[]; if(!store.prefs)store.prefs={sound:true};
 let saveT=null;
-function save(){clearTimeout(saveT);saveT=setTimeout(flush,200)}
+function save(){clearTimeout(saveT);saveT=setTimeout(flush,200);if(typeof scheduleSync==='function')scheduleSync()}
 function flush(){clearTimeout(saveT);try{localStorage.setItem(KEY,JSON.stringify(store));storageOK=true}catch(e){if(storageOK)toast('Este navegador não deixou salvar. Faça um backup na aba Progresso.');storageOK=false}}
 window.addEventListener('pagehide',flush);
 document.addEventListener('visibilitychange',function(){if(document.hidden)flush()});
@@ -541,6 +541,62 @@ function blockWeek(ds){return Math.floor(dayDiff(parseISO(getStart()),mondayOf(p
 function sess(ds){if(!store.sessions[ds])store.sessions[ds]={sets:{},run:{}};const s=store.sessions[ds];if(!s.sets)s.sets={};if(!s.run)s.run={};return s}
 function peek(ds){return store.sessions[ds]||null}
 function touch(){if(!store.startDate)store.startDate=getStart()}
+
+/* ---------- Conta e sincronização (Supabase) ---------- */
+const SB_URL='https://sgqsriitdwmpylghrytx.supabase.co', SB_KEY='sb_publishable_HBoIOeDB1Pm9hgIcoPM-cw_yBgOk10U';
+const AUTH_KEY=KEY+'-auth';
+let auth=null, syncBusy=false, syncT=null, syncErr='', linkSent='';
+try{auth=JSON.parse(localStorage.getItem(AUTH_KEY)||'null')}catch(e){}
+function saveAuth(){try{if(auth)localStorage.setItem(AUTH_KEY,JSON.stringify(auth));else localStorage.removeItem(AUTH_KEY)}catch(e){}}
+function sbFetch(path,opt,token){
+  opt=opt||{};const h=Object.assign({apikey:SB_KEY,'Content-Type':'application/json'},opt.headers||{});
+  if(token)h.Authorization='Bearer '+token;
+  return fetch(SB_URL+path,Object.assign({},opt,{headers:h}));
+}
+function setSession(j,email){
+  const old=auth||{};
+  auth={access:j.access_token,refresh:j.refresh_token,exp:Date.now()+(j.expires_in||3600)*1000,
+    email:email||(j.user&&j.user.email)||old.email,uid:(j.user&&j.user.id)||old.uid,lastSync:old.lastSync||null,imported:old.imported||false};
+  saveAuth();
+}
+async function freshToken(){
+  if(!auth)return null;
+  if(Date.now()<auth.exp-60000)return auth.access;
+  const r=await sbFetch('/auth/v1/token?grant_type=refresh_token',{method:'POST',body:JSON.stringify({refresh_token:auth.refresh})});
+  if(r.status===400||r.status===401){auth=null;saveAuth();throw new Error('Sessão expirada. Entre de novo.')}
+  if(!r.ok)throw new Error('offline');
+  setSession(await r.json());return auth.access;
+}
+function readLinkHash(){
+  const m=/access_token=/.test(location.hash)&&new URLSearchParams(location.hash.slice(1));
+  if(!m)return false;
+  history.replaceState(null,'',location.pathname+location.search);
+  if(!m.get('access_token'))return false;
+  const exp=Number(m.get('expires_in'))||3600;
+  auth={access:m.get('access_token'),refresh:m.get('refresh_token'),exp:Date.now()+exp*1000,email:null,uid:null,lastSync:null,imported:false};
+  try{const pl=JSON.parse(atob(auth.access.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));auth.uid=pl.sub;auth.email=pl.email||null}catch(e){}
+  saveAuth();return true;
+}
+async function sendLink(email){
+  const r=await sbFetch('/auth/v1/otp',{method:'POST',body:JSON.stringify({email:email,create_user:true,email_redirect_to:location.origin+location.pathname})});
+  if(!r.ok){let m='';try{m=(await r.json()).msg||''}catch(e){}throw new Error(m||'Não consegui enviar o link.')}
+}
+async function syncNow(){
+  if(!auth||syncBusy||!navigator.onLine)return;
+  syncBusy=true;syncErr='';
+  try{
+    flush();
+    const tk=await freshToken();
+    const r=await sbFetch('/rest/v1/rpc/import_app_backup',{method:'POST',body:JSON.stringify({p:{v:store.v,startDate:store.startDate,weights:store.weights,sessions:store.sessions,prefs:store.prefs}})},tk);
+    if(!r.ok){let m='';try{m=(await r.json()).message||''}catch(e){}throw new Error(m||'Falha ao enviar.')}
+    auth.lastSync=Date.now();auth.imported=true;saveAuth();
+  }catch(e){syncErr=e.message==='offline'||e.message==='Failed to fetch'?'Sem rede. Tento de novo quando voltar.':e.message}
+  syncBusy=false;
+  if(document.querySelector('#authBox'))render();
+}
+function scheduleSync(){if(!auth)return;clearTimeout(syncT);syncT=setTimeout(syncNow,8000)}
+window.addEventListener('online',function(){if(auth)syncNow()});
+const justLogged=readLinkHash();
 
 /* ---------- Regras do plano ---------- */
 const PLAN_NAMES={infA:'Treino A',supA:'Treino B',infB:'Treino C',supB:'Treino D',treinoE:'Treino E',pescoco:'Pescoço em casa',runq:'Corrida de quarta',runl:'Longão'};
@@ -1163,10 +1219,24 @@ function vPCorpo(){
    +'</tbody></table></div><p class="muted" style="font-size:14px">Com treinos de 35 minutos, o volume fica perto de 10 séries por músculo contando o trabalho indireto. É o mínimo eficiente e, voltando de pausa, ainda rende bastante.</p></section>';
   h+='<section class="sec"><h2>Bloco de 12 semanas</h2><label class="fl">Segunda-feira de início<input class="in" type="date" id="startDate" value="'+getStart()+'"></label><p class="fnote">A semana 8 é leve. Depois da 12, mude a data para começar um bloco novo.</p></section>';
   h+='<section class="sec"><h2>Cronômetro</h2><label class="check" for="prefSound"><input type="checkbox" id="prefSound"'+((store.prefs&&store.prefs.sound===false)?'':' checked')+'>Bipe no fim do descanso</label><p class="fnote">O celular também vibra. Com a tela bloqueada, o navegador pausa o aviso; o tempo continua certo quando você volta.</p></section>';
+  h+='<section class="sec" id="authBox"><h2>Conta</h2>'+authHtml()+'</section>';
   h+='<section class="sec"><h2>Seus dados</h2><p>Os registros ficam neste navegador, neste celular. Faça um backup de vez em quando, por exemplo mandando o texto para você mesmo no WhatsApp.</p>'
    +'<div class="row-actions"><button class="btn" id="bkCopy">Copiar backup</button><button class="btn" id="bkShow">Restaurar</button></div><div id="bkArea"></div>'
    +(storageOK?'':'<p class="goal">Este navegador está bloqueando o salvamento. Os registros somem ao fechar a página.</p>')+'</section>';
   return h;
+}
+function authHtml(){
+  if(auth){
+    const when=auth.lastSync?new Date(auth.lastSync).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):null;
+    return '<p>Conectado como <b>'+esc(auth.email||'sua conta')+'</b>.</p><p class="fnote">'+(syncBusy?'Enviando…':when?'Último envio: '+when+'.':'Ainda não enviado.')+'</p>'
+      +(syncErr?'<p class="goal">'+esc(syncErr)+'</p>':'')
+      +'<div class="row-actions"><button class="btn primary" id="syncBtn">Sincronizar agora</button><button class="btn" id="logoutBtn">Sair</button></div>';
+  }
+  return '<p>Entre para guardar seus treinos na nuvem. Você recebe um link por e-mail, sem senha.</p>'
+    +(linkSent?'<p class="fnote">Link enviado para <b>'+esc(linkSent)+'</b>. Abra o e-mail neste celular e toque no link.</p>':'')
+    +(syncErr?'<p class="goal">'+esc(syncErr)+'</p>':'')
+    +'<label class="fl">E-mail<input class="in" type="email" id="authEmail" inputmode="email" autocomplete="email" value="'+esc(linkSent)+'"></label>'
+    +'<div class="row-actions"><button class="btn primary" id="loginBtn">Entrar para sincronizar</button></div>';
 }
 function trend(ws){
   const t0=parseISO(ws[0].date),xs=ws.map(function(w){return dayDiff(t0,parseISO(w.date))}),ys=ws.map(function(w){return num(w.kg)}),diff=ys[ys.length-1]-ys[0];
@@ -1365,6 +1435,14 @@ $view.addEventListener('click',function(e){
   }
   const dw=e.target.closest('[data-delw]');
   if(dw){const gone=store.weights.find(function(x){return x.date===dw.dataset.delw});store.weights=store.weights.filter(function(x){return x!==gone});save();render();toast('Registro de '+ddmm(gone.date)+' apagado.','Desfazer',function(){store.weights.push(gone);save();render()});return}
+  if(e.target.id==='loginBtn'){
+    const em=document.getElementById('authEmail').value.trim();
+    if(!/^\S+@\S+\.\S+$/.test(em)){syncErr='Digite um e-mail válido.';render();return}
+    e.target.disabled=true;e.target.textContent='Enviando…';
+    sendLink(em).then(function(){linkSent=em;syncErr=''}).catch(function(err){syncErr=err.message==='Failed to fetch'?'Sem rede.':err.message}).then(render);return;
+  }
+  if(e.target.id==='syncBtn'){syncNow();render();return}
+  if(e.target.id==='logoutBtn'){const tk=auth&&auth.access;if(tk)sbFetch('/auth/v1/logout',{method:'POST'},tk).catch(function(){});auth=null;saveAuth();linkSent='';syncErr='';render();toast('Você saiu. Os dados continuam neste celular.');return}
   if(e.target.id==='bkCopy'){flush();const txt=JSON.stringify(store);const fb=function(){document.getElementById('bkArea').innerHTML='<p class="fnote" style="margin-top:12px">Selecione e copie o texto abaixo.</p><textarea class="in" id="bkOut" readonly></textarea>';const t=document.getElementById('bkOut');t.value=txt;t.focus();t.select()};try{if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(txt).then(function(){toast('Backup copiado. Cole num lugar seguro.')},fb);else fb()}catch(err){fb()}return}
   if(e.target.id==='bkShow'){document.getElementById('bkArea').innerHTML='<label class="fl" style="margin-top:12px">Cole o backup aqui. Ele substitui os registros deste celular.<textarea class="in" id="bkIn"></textarea></label><div class="row-actions"><button class="btn primary" id="bkApply">Restaurar backup</button></div>';return}
   if(e.target.id==='bkApply'){
@@ -1384,6 +1462,8 @@ $view.addEventListener('focusout',function(){setTimeout(function(){const a=docum
 
 render();
 if(activeSession())ensureTick();
+if(auth)syncNow();
+if(justLogged)toast('Conta conectada. Enviando seus treinos…');
 })();
 </script>
 </body>
