@@ -40,7 +40,11 @@ O banco é multiusuário: cada pessoa só enxerga os próprios registros, e o ca
 
 ## Conta e sincronização
 
-Em **Progresso > Corpo > Conta** o app pede o e-mail e manda um link mágico (sem senha). Depois do login, tudo o que você faz no app (séries, corridas, peso, troca do treino do dia, mover um registro, apagar) sobe para o Supabase e volta para os outros aparelhos.
+A engrenagem no topo de **Progresso** abre as **Configurações**: conta, início do bloco de 12 semanas, bipe do cronômetro e backup.
+
+**Entrar:** e-mail e senha (não envia e-mail, então não esbarra no limite de e-mails por hora do Supabase). **Criar conta** faz o cadastro pela mesma tela. Quem entrou pelo link por e-mail pode definir uma senha na própria tela de Conta. O link por e-mail continua disponível ("Receber link por e-mail"), mas o Supabase deixa o projeto enviar poucos e-mails por hora.
+
+Depois do login, tudo o que você faz no app (séries, corridas, peso, troca do treino do dia, mover um registro, apagar) sobe para o Supabase e volta para os outros aparelhos.
 
 - **Offline primeiro:** tudo é salvo no `localStorage` antes; o envio acontece cerca de 8 segundos depois de cada alteração, quando a rede volta e quando você reabre o app.
 - **Exclusões:** apagar no app marca `deleted_at` no banco (o histórico fica) e apaga nos outros aparelhos.
@@ -48,6 +52,6 @@ Em **Progresso > Corpo > Conta** o app pede o e-mail e manda um link mágico (se
 - **Primeiro login de um aparelho:** baixa o que está na conta; se o aparelho já tinha dados de um dia, os dele vencem.
 - **Gráficos:** o conteúdo fica nas tabelas de sempre, então as visões `v_*` já refletem tudo.
 
-**Configuração única no Supabase** (Authentication > URL Configuration): coloque o endereço do app, com a barra final (`https://eduviva.github.io/app-de-treinos/`), em *Site URL* e em *Redirect URLs*. O app pede ao Supabase que o link do e-mail volte para esse endereço (parâmetro `redirect_to`); se ele não estiver na lista de *Redirect URLs*, o Supabase ignora o pedido e manda para o *Site URL*. Se o link chegar sem `/app-de-treinos/`, é sinal de que o endereço não está na lista ou de que o *Site URL* está sem o caminho.
+**Configuração no Supabase.** Para o cadastro não depender de e-mail, desligue *Confirm email* em Authentication > Providers > Email. Para o link por e-mail voltar ao app, em Authentication > URL Configuration: coloque o endereço do app, com a barra final (`https://eduviva.github.io/app-de-treinos/`), em *Site URL* e em *Redirect URLs*. O app pede ao Supabase que o link do e-mail volte para esse endereço (parâmetro `redirect_to`); se ele não estiver na lista de *Redirect URLs*, o Supabase ignora o pedido e manda para o *Site URL*. Se o link chegar sem `/app-de-treinos/`, é sinal de que o endereço não está na lista ou de que o *Site URL* está sem o caminho.
 
 Limite: o cronômetro em andamento e o dia aberto na tela não sincronizam; o resto sim.

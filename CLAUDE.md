@@ -8,6 +8,8 @@ App pessoal de treino do Eduardo (25 anos, treina na Champion Body Gravataí). H
 - Dados em `localStorage`:
   - `treino-eduardo-v2`: `{v:2, startDate, weights:[{date,kg,waist,arm}], sessions:{'AAAA-MM-DD':{sets:{exId:[{kg,reps,done,alt}]}, run:{km,min,sec,note,sw}, startedAt, finishedAt, plan}}, prefs:{sound}, activeDate, runDate}`
   - `treino-eduardo-v2-ui`: preferências de tela.
+- Telas: `ficha`, `corrida`, `comida`, `progresso` (abas) e `config` (Configurações, aberta pela engrenagem do Progresso; conta, bloco de 12 semanas, bipe, backup). Configuração nova vai em `vConfig()`, não em Progresso.
+- Login: e-mail e senha (`pwLogin`, `pwSignup`, `pwSave`) e link por e-mail (`sendLink`, limitado a poucos e-mails por hora no Supabase). `redirect_to` vai na URL do `/auth/v1/otp` e do `/auth/v1/signup`, nunca no corpo.
 - Objetos principais:
   - `S`: fichas `infA`, `supA`, `infB`, `supB`, `treinoE`, `pescoco`. Os ids dos exercícios (`ia1`, `sa1`, …, `pc8`) são iguais a `template_items.legacy_code` no banco.
   - `RUN`: as 12 semanas de corrida.
