@@ -25,7 +25,7 @@ O endereço novo guarda os dados separado do artefato do Claude. Para levar o hi
 
 ## Banco de dados (Supabase)
 
-Projeto `sgqsriitdwmpylghrytx` (Pessoal). As cinco migrations desta pasta já estão aplicadas:
+Projeto `sgqsriitdwmpylghrytx` (Pessoal). As seis migrations desta pasta já estão aplicadas:
 
 | Migration | O que faz |
 |---|---|
@@ -33,16 +33,21 @@ Projeto `sgqsriitdwmpylghrytx` (Pessoal). As cinco migrations desta pasta já es
 | `catalogo_exercicios` | 38 grupos musculares e 88 exercícios públicos |
 | `programa_modelo` | programa de 12 semanas: fichas A–E e pescoço, agenda semanal e 24 corridas planejadas |
 | `ajustes_desempenho` | índices e políticas ajustados pelo Supabase Advisor |
+| `sincronizacao_bidirecional` | tabela `app_sync_meta` e funções `sync_app`, `app_apply_day`, `app_day_doc`: sincronização nos dois sentidos, com exclusões e troca de dia |
 | `exportar_backup` | função `export_app_backup()`, o inverso de `import_app_backup`: devolve os registros do usuário no formato do app |
 
 O banco é multiusuário: cada pessoa só enxerga os próprios registros, e o catálogo público é somente leitura.
 
 ## Conta e sincronização
 
-Em **Progresso > Corpo > Conta** o app pede o e-mail e manda um link mágico (sem senha). Depois do login, os registros do aparelho são enviados ao Supabase com `import_app_backup` (idempotente), de forma automática alguns segundos depois de cada alteração e quando a rede volta. Tudo continua salvo no `localStorage` primeiro.
+Em **Progresso > Corpo > Conta** o app pede o e-mail e manda um link mágico (sem senha). Depois do login, tudo o que você faz no app (séries, corridas, peso, troca do treino do dia, mover um registro, apagar) sobe para o Supabase e volta para os outros aparelhos.
 
-**Configuração única no Supabase** (Authentication > URL Configuration): coloque o endereço do app no GitHub Pages em *Site URL* e em *Redirect URLs*. Sem isso o link do e-mail não volta para o app.
+- **Offline primeiro:** tudo é salvo no `localStorage` antes; o envio acontece cerca de 8 segundos depois de cada alteração, quando a rede volta e quando você reabre o app.
+- **Exclusões:** apagar no app marca `deleted_at` no banco (o histórico fica) e apaga nos outros aparelhos.
+- **Conflitos:** vale a alteração mais recente de cada dia (pelo relógio do aparelho). Se dois aparelhos editam o mesmo dia sem rede, o que foi salvo por último vence o dia inteiro.
+- **Primeiro login de um aparelho:** baixa o que está na conta; se o aparelho já tinha dados de um dia, os dele vencem.
+- **Gráficos:** o conteúdo fica nas tabelas de sempre, então as visões `v_*` já refletem tudo.
 
-**Caminho de volta.** No primeiro login de cada aparelho, o app baixa os registros da conta (`export_app_backup`) e junta com o que já existe, antes de enviar. O que está no aparelho nunca é sobrescrito: só entram dias, exercícios, corridas e pesos que faltam aqui. O botão **Baixar do banco** repete isso quando quiser.
+**Configuração única no Supabase** (Authentication > URL Configuration): o endereço do app no GitHub Pages em *Site URL* e *Redirect URLs*.
 
-Limites: a troca ou mudança de dia de um treino e o cronômetro em andamento não são guardados no banco, então não voltam. Apagar um registro no aparelho não apaga no banco, e ele pode voltar no próximo download.
+Limite: o cronômetro em andamento e o dia aberto na tela não sincronizam; o resto sim.

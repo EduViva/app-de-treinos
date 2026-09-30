@@ -30,15 +30,16 @@ App pessoal de treino do Eduardo (25 anos, treina na Champion Body Gravataí). H
   - `updated_at` resolve conflitos; `deleted_at` apaga sem perder o histórico.
   - `workout_sessions.local_date` é a data do calendário do usuário, nunca derivada de um horário UTC.
 - Funções:
+  - `sync_app(jsonb)` sincroniza nos dois sentidos (ver Próximos passos). `app_sync_meta` guarda versão, tombstone e plano de cada dia/peso/configuração.
   - `export_app_backup()` devolve os registros do usuário logado no formato do `localStorage` (inverso do import).
   - `clone_program(program_id, start_date)` copia o programa-modelo para o usuário e o inscreve nele.
-  - `import_app_backup(jsonb)` importa o texto de "Copiar backup" do app. É idempotente pelo `source_key`.
+  - `import_app_backup(jsonb)` importa o texto de "Copiar backup" do app (caminho antigo; o app não o chama mais). É idempotente pelo `source_key`.
 - Visões para gráficos: `v_exercise_best_sets`, `v_weekly_volume`, `v_weekly_sets_by_muscle`.
 - Na tela, a chave publicável (publishable key) pode ficar no código, porque o RLS protege os dados. A service role nunca vai para o front-end.
 
 ## Próximos passos
 1. Publicar no GitHub Pages (instruções no README).
 2. ~~Login com link mágico~~ feito (fetch direto ao GoTrue, sessão em `treino-eduardo-v2-auth`).
-3. ~~Envio ao banco~~ feito: `syncNow()` chama `import_app_backup` após login e a cada `save()` (debounce de 8 s). Falta configurar Site URL/Redirect URLs no Supabase Auth.
-4. ~~Caminho de volta~~ feito: `pullNow()` chama `export_app_backup()` e `mergeRemote()` junta sem sobrescrever o local (local vence). Roda uma vez por login (`auth.pulled`) e no botão "Baixar do banco". `import_app_backup` apaga e recria as sessões, então `updated_at` não serve de critério; apagar e sincronizar exclusões (`deleted_at`) e guardar `session.plan` no banco ficam para depois.
+3. ~~Sincronização bidirecional~~ feita. `syncNow()` chama `sync_app` (envia o que mudou e recebe o que mudou desde `sy.cursor`). O app detecta mudanças por impressão digital de cada dia/peso (`detectChanges`), então troca de treino (`plan`), mover registro e apagar entram sem tratamento próprio; apagar vira tombstone e o banco preenche `deleted_at`. Estado da sincronização em `treino-eduardo-v2-sync`. Conflito: versão mais recente por dia (`v` = relógio do aparelho); `seq` do servidor entrega só o que mudou. Falta configurar Site URL/Redirect URLs no Supabase Auth (já feito para o GitHub Pages do Eduardo).
+4. Se mexer no formato de um dia (`canonDay` no app, `app_day_doc`/`app_apply_day` no banco), mantenha os dois lados iguais.
 5. Depois: gráficos lendo as visões do banco e telas para criar exercícios e fichas próprias.

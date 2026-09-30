@@ -581,50 +581,152 @@ async function sendLink(email){
   const r=await sbFetch('/auth/v1/otp',{method:'POST',body:JSON.stringify({email:email,create_user:true,email_redirect_to:location.origin+location.pathname})});
   if(!r.ok){let m='';try{m=(await r.json()).msg||''}catch(e){}throw new Error(m||'Não consegui enviar o link.')}
 }
-/* Junta o que veio do banco com o que já existe aqui. O que está no aparelho nunca é sobrescrito. */
-function mergeRemote(o){
+/* ---------- Sincronização: o que mudou aqui sobe, o que mudou lá desce ----------
+   O app detecta mudanças comparando cada dia com o último estado sincronizado (impressão digital),
+   então trocar o treino do dia, mover um registro ou apagar algo entram sem tratamento especial.
+   Apagar vira "tombstone" (o banco marca deleted_at). Em conflito, vale a versão mais recente do dia. */
+const SYNC_KEY=KEY+'-sync';
+let sy={uid:null,ready:false,cursor:0,days:{},wts:{},set:{}};
+try{const o=JSON.parse(localStorage.getItem(SYNC_KEY)||'null');if(o&&o.days&&o.wts&&o.set)sy=o}catch(e){}
+function saveSy(){try{localStorage.setItem(SYNC_KEY,JSON.stringify(sy))}catch(e){}}
+function hashStr(t){let h=5381;for(let i=0;i<t.length;i++)h=((h<<5)+h+t.charCodeAt(i))|0;return String(h)}
+function bump(v,now){return Math.max(now,(v||0)+1)}
+function canonDay(s){
+  if(!s)return null;
+  const sets={};
+  Object.keys(s.sets||{}).sort().forEach(function(id){
+    const a=(s.sets[id]||[]).map(function(x){return x&&x.done?{kg:String(x.kg==null?'':x.kg),reps:String(x.reps==null?'':x.reps),done:true,alt:!!x.alt}:{kg:'',reps:'',done:false}});
+    while(a.length&&!a[a.length-1].done)a.pop();
+    if(a.length)sets[id]=a;
+  });
+  const r=s.run||{}, run=num(r.km)>0?{km:String(r.km),min:String(r.min==null?'':r.min),sec:String(r.sec==null?'':r.sec),note:String(r.note||'')}:{};
+  const d={sets:sets,run:run};
+  if(s.plan)d.plan=s.plan; if(s.mode)d.mode=s.mode; if(s.startedAt)d.startedAt=s.startedAt; if(s.finishedAt)d.finishedAt=s.finishedAt;
+  return d;
+}
+function emptyDoc(d){return !d||(!Object.keys(d.sets).length&&!d.run.km&&!d.plan&&!d.mode&&!d.startedAt&&!d.finishedAt)}
+function canonW(w){return w?{kg:num(w.kg),waist:num(w.waist)>0?num(w.waist):null,arm:num(w.arm)>0?num(w.arm):null}:null}
+function findW(date){return store.weights.find(function(x){return x.date===date})}
+function settingVal(k){return k==='startDate'?(store.startDate||null):(store.prefs&&store.prefs.sound===false?false:true)}
+/* compara o estado atual com o último sincronizado e marca o que precisa subir */
+function detectChanges(){
+  const now=Date.now(), ds={}, ws={};
+  Object.keys(store.sessions).forEach(function(d){ds[d]=1});Object.keys(sy.days).forEach(function(d){ds[d]=1});
+  Object.keys(ds).forEach(function(d){
+    const doc=canonDay(store.sessions[d]), m=sy.days[d];
+    if(emptyDoc(doc)){if(m&&!m.del)sy.days[d]={fp:'',v:bump(m.v,now),del:true,dirty:true};return}
+    const fp=hashStr(JSON.stringify(doc));
+    if(!m||m.del||m.fp!==fp)sy.days[d]={fp:fp,v:bump(m&&m.v,now),del:false,dirty:true};
+  });
+  store.weights.forEach(function(w){ws[w.date]=1});Object.keys(sy.wts).forEach(function(d){ws[d]=1});
+  Object.keys(ws).forEach(function(d){
+    const w=canonW(findW(d)), m=sy.wts[d];
+    if(!w||!(w.kg>0)){if(m&&!m.del)sy.wts[d]={fp:'',v:bump(m.v,now),del:true,dirty:true};return}
+    const fp=hashStr(JSON.stringify(w));
+    if(!m||m.del||m.fp!==fp)sy.wts[d]={fp:fp,v:bump(m&&m.v,now),del:false,dirty:true};
+  });
+  ['startDate','sound'].forEach(function(k){
+    const val=settingVal(k);if(val==null)return;
+    const fp=hashStr(JSON.stringify(val)), m=sy.set[k];
+    if(!m||m.fp!==fp)sy.set[k]={fp:fp,v:bump(m&&m.v,now),dirty:true};
+  });
+}
+function buildPush(){
+  const body={days:{},weights:{},settings:{}}, sent=[];
+  Object.keys(sy.days).forEach(function(d){const m=sy.days[d];if(!m.dirty)return;
+    body.days[d]=m.del?{v:m.v,del:true}:Object.assign({v:m.v},canonDay(store.sessions[d]));sent.push(['days',d,m.v])});
+  Object.keys(sy.wts).forEach(function(d){const m=sy.wts[d];if(!m.dirty)return;
+    body.weights[d]=m.del?{v:m.v,del:true}:Object.assign({v:m.v},canonW(findW(d)));sent.push(['wts',d,m.v])});
+  Object.keys(sy.set).forEach(function(k){const m=sy.set[k];if(!m.dirty)return;
+    body.settings[k]={v:m.v,value:settingVal(k)};sent.push(['set',k,m.v])});
+  return {body:body,sent:sent};
+}
+function normRun(r){r=r||{};return Object.assign({km:'',min:'',sec:'',note:''},r)}
+/* aplica o que veio do banco; "first" = primeira sincronização deste aparelho (o que já existe aqui vence) */
+function applyRemote(res,first){
   let n=0;
-  if(!o||typeof o!=='object')return 0;
-  if(!store.startDate&&o.startDate){store.startDate=o.startDate}
-  (o.weights||[]).forEach(function(w){if(w&&w.date&&!store.weights.some(function(x){return x.date===w.date})){store.weights.push({date:w.date,kg:w.kg,waist:w.waist==null?null:w.waist,arm:w.arm==null?null:w.arm});n++}});
-  Object.keys(o.sessions||{}).forEach(function(d){
-    const r=o.sessions[d],l=store.sessions[d];
-    if(!l){store.sessions[d]=r;n++;return}
-    if(!l.sets)l.sets={};if(!l.run)l.run={};
-    Object.keys(r.sets||{}).forEach(function(id){
-      if(!(l.sets[id]||[]).some(function(x){return x&&x.done})){l.sets[id]=r.sets[id];n++}
-    });
-    if(!runLogged(l)&&r.run&&r.run.km){l.run=r.run;n++}
-    if(!l.startedAt&&r.startedAt)l.startedAt=r.startedAt;
-    if(!l.finishedAt&&r.finishedAt)l.finishedAt=r.finishedAt;
+  Object.keys(res.days||{}).forEach(function(d){
+    const e=res.days[d], m=sy.days[d];
+    if(m&&m.v>=e.v)return;
+    const local=canonDay(store.sessions[d]);
+    if(e.del){
+      if(!m&&!emptyDoc(local))return;
+      if(store.sessions[d]){delete store.sessions[d];n++}
+      if(store.activeDate===d)store.activeDate=null;if(store.runDate===d)store.runDate=null;
+      sy.days[d]={fp:'',v:e.v,del:true,dirty:false};return;
+    }
+    const cur=store.sessions[d]||{}, ns={sets:e.sets||{},run:normRun(e.run)};
+    ['plan','mode','startedAt','finishedAt'].forEach(function(k){if(e[k])ns[k]=e[k]});
+    if(cur.run&&cur.run.sw)ns.run.sw=cur.run.sw;
+    const fp=hashStr(JSON.stringify(canonDay(ns)));
+    if(!m&&!emptyDoc(local)){if(hashStr(JSON.stringify(local))===fp)sy.days[d]={fp:fp,v:e.v,del:false,dirty:false};return}
+    store.sessions[d]=ns;n++;
+    sy.days[d]={fp:fp,v:e.v,del:false,dirty:false};
+  });
+  Object.keys(res.weights||{}).forEach(function(d){
+    const e=res.weights[d], m=sy.wts[d];
+    if(m&&m.v>=e.v)return;
+    const local=findW(d);
+    if(e.del){
+      if(!m&&local)return;
+      if(local){store.weights=store.weights.filter(function(x){return x.date!==d});n++}
+      sy.wts[d]={fp:'',v:e.v,del:true,dirty:false};return;
+    }
+    const nw={date:d,kg:e.kg,waist:e.waist==null?null:e.waist,arm:e.arm==null?null:e.arm}, fp=hashStr(JSON.stringify(canonW(nw)));
+    if(!m&&local){if(hashStr(JSON.stringify(canonW(local)))===fp)sy.wts[d]={fp:fp,v:e.v,del:false,dirty:false};return}
+    store.weights=store.weights.filter(function(x){return x.date!==d});store.weights.push(nw);n++;
+    sy.wts[d]={fp:fp,v:e.v,del:false,dirty:false};
+  });
+  store.weights.sort(function(a,b){return a.date<b.date?-1:a.date>b.date?1:0});
+  Object.keys(res.settings||{}).forEach(function(k){
+    const e=res.settings[k], m=sy.set[k];
+    if(m&&m.v>=e.v)return;
+    if(!m&&first&&settingVal(k)!=null&&!(k==='sound'))return;
+    if(k==='startDate'&&e.value){store.startDate=e.value;n++}
+    else if(k==='sound'&&typeof e.value==='boolean'){store.prefs.sound=e.value;n++}
+    else return;
+    sy.set[k]={fp:hashStr(JSON.stringify(settingVal(k))),v:e.v,dirty:false};
   });
   return n;
 }
-async function pullNow(){
+async function roundTrip(push){
   const tk=await freshToken();
-  const r=await sbFetch('/rest/v1/rpc/export_app_backup',{method:'POST',body:'{}'},tk);
-  if(!r.ok){let m='';try{m=(await r.json()).message||''}catch(e){}throw new Error(m||'Falha ao baixar.')}
-  const n=mergeRemote(await r.json());
-  if(n){flush()}
-  auth.pulled=true;saveAuth();
-  return n;
+  let body={days:{},weights:{},settings:{}}, sent=[];
+  if(push){detectChanges();saveSy();const b=buildPush();body=b.body;sent=b.sent}
+  body.since=sy.cursor;
+  const r=await sbFetch('/rest/v1/rpc/sync_app',{method:'POST',body:JSON.stringify({p:body})},tk);
+  if(!r.ok){let m='';try{m=(await r.json()).message||''}catch(e){}throw new Error(m||'Falha ao sincronizar.')}
+  const res=await r.json(), bad=res.rejected||[];
+  sent.forEach(function(t){
+    const m=sy[t[0]][t[1]];
+    if(m&&m.v===t[2]&&bad.indexOf((t[0]==='days'?'day':t[0]==='wts'?'weight':'setting')+':'+t[1])<0)m.dirty=false;
+  });
+  const n=applyRemote(res,!push);
+  sy.cursor=Math.max(sy.cursor,res.seq||0);saveSy();
+  if(n)flush();
+  return {n:n,bad:bad};
 }
 async function syncNow(){
   if(!auth||syncBusy||!navigator.onLine)return;
   syncBusy=true;syncErr='';
+  let changed=0;
   try{
     flush();
-    if(!auth.pulled){const n=await pullNow();if(n){render();toast('Baixei '+n+(n===1?' registro':' registros')+' da sua conta.')}}
-    const tk=await freshToken();
-    const r=await sbFetch('/rest/v1/rpc/import_app_backup',{method:'POST',body:JSON.stringify({p:{v:store.v,startDate:store.startDate,weights:store.weights,sessions:store.sessions,prefs:store.prefs}})},tk);
-    if(!r.ok){let m='';try{m=(await r.json()).message||''}catch(e){}throw new Error(m||'Falha ao enviar.')}
-    auth.lastSync=Date.now();auth.imported=true;saveAuth();
+    if(sy.uid!==auth.uid){sy={uid:auth.uid,ready:false,cursor:0,days:{},wts:{},set:{}};saveSy()}
+    if(!sy.ready){const f=await roundTrip(false);changed+=f.n;sy.ready=true;saveSy()}
+    const r=await roundTrip(true);changed+=r.n;
+    if(r.bad.length)syncErr='O banco recusou '+r.bad.length+(r.bad.length===1?' registro':' registros')+' ('+r.bad.slice(0,3).join(', ')+'). Confira os valores.';
+    auth.lastSync=Date.now();saveAuth();
   }catch(e){syncErr=e.message==='offline'||e.message==='Failed to fetch'?'Sem rede. Tento de novo quando voltar.':e.message}
   syncBusy=false;
-  if(document.querySelector('#authBox'))render();
+  if(changed){
+    if(!document.body.classList.contains('typing')&&!bsState)render();
+    toast('Atualizado com a sua conta.');
+  }else if(document.querySelector('#authBox'))render();
 }
 function scheduleSync(){if(!auth)return;clearTimeout(syncT);syncT=setTimeout(syncNow,8000)}
 window.addEventListener('online',function(){if(auth)syncNow()});
+document.addEventListener('visibilitychange',function(){if(auth)syncNow()});
 const justLogged=readLinkHash();
 
 /* ---------- Regras do plano ---------- */
@@ -1259,7 +1361,7 @@ function authHtml(){
     const when=auth.lastSync?new Date(auth.lastSync).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):null;
     return '<p>Conectado como <b>'+esc(auth.email||'sua conta')+'</b>.</p><p class="fnote">'+(syncBusy?'Enviando…':when?'Último envio: '+when+'.':'Ainda não enviado.')+'</p>'
       +(syncErr?'<p class="goal">'+esc(syncErr)+'</p>':'')
-      +'<div class="row-actions"><button class="btn primary" id="syncBtn">Sincronizar agora</button><button class="btn" id="pullBtn">Baixar do banco</button><button class="btn" id="logoutBtn">Sair</button></div>';
+      +'<div class="row-actions"><button class="btn primary" id="syncBtn">Sincronizar agora</button><button class="btn" id="logoutBtn">Sair</button></div>';
   }
   return '<p>Entre para guardar seus treinos na nuvem. Você recebe um link por e-mail, sem senha.</p>'
     +(linkSent?'<p class="fnote">Link enviado para <b>'+esc(linkSent)+'</b>. Abra o e-mail neste celular e toque no link.</p>':'')
@@ -1471,10 +1573,6 @@ $view.addEventListener('click',function(e){
     sendLink(em).then(function(){linkSent=em;syncErr=''}).catch(function(err){syncErr=err.message==='Failed to fetch'?'Sem rede.':err.message}).then(render);return;
   }
   if(e.target.id==='syncBtn'){syncNow();render();return}
-  if(e.target.id==='pullBtn'){
-    e.target.disabled=true;e.target.textContent='Baixando…';
-    pullNow().then(function(n){syncErr='';render();toast(n?'Baixei '+n+(n===1?' registro.':' registros.'):'Nada novo no banco.')}).catch(function(err){syncErr=err.message==='offline'||err.message==='Failed to fetch'?'Sem rede.':err.message;render()});return;
-  }
   if(e.target.id==='logoutBtn'){const tk=auth&&auth.access;if(tk)sbFetch('/auth/v1/logout',{method:'POST'},tk).catch(function(){});auth=null;saveAuth();linkSent='';syncErr='';render();toast('Você saiu. Os dados continuam neste celular.');return}
   if(e.target.id==='bkCopy'){flush();const txt=JSON.stringify(store);const fb=function(){document.getElementById('bkArea').innerHTML='<p class="fnote" style="margin-top:12px">Selecione e copie o texto abaixo.</p><textarea class="in" id="bkOut" readonly></textarea>';const t=document.getElementById('bkOut');t.value=txt;t.focus();t.select()};try{if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(txt).then(function(){toast('Backup copiado. Cole num lugar seguro.')},fb);else fb()}catch(err){fb()}return}
   if(e.target.id==='bkShow'){document.getElementById('bkArea').innerHTML='<label class="fl" style="margin-top:12px">Cole o backup aqui. Ele substitui os registros deste celular.<textarea class="in" id="bkIn"></textarea></label><div class="row-actions"><button class="btn primary" id="bkApply">Restaurar backup</button></div>';return}
