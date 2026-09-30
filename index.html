@@ -577,8 +577,11 @@ function readLinkHash(){
   try{const pl=JSON.parse(atob(auth.access.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));auth.uid=pl.sub;auth.email=pl.email||null}catch(e){}
   saveAuth();return true;
 }
+/* O Supabase só lê o destino do link pelo parâmetro de URL redirect_to (no corpo ele é ignorado e o link cai no Site URL).
+   O endereço tem de bater com um item de Authentication > URL Configuration > Redirect URLs. */
+function appUrl(){return location.origin+location.pathname.replace(/index\.html$/,'')}
 async function sendLink(email){
-  const r=await sbFetch('/auth/v1/otp',{method:'POST',body:JSON.stringify({email:email,create_user:true,email_redirect_to:location.origin+location.pathname})});
+  const r=await sbFetch('/auth/v1/otp?redirect_to='+encodeURIComponent(appUrl()),{method:'POST',body:JSON.stringify({email:email,create_user:true})});
   if(!r.ok){let m='';try{m=(await r.json()).msg||''}catch(e){}throw new Error(m||'Não consegui enviar o link.')}
 }
 /* ---------- Sincronização: o que mudou aqui sobe, o que mudou lá desce ----------
