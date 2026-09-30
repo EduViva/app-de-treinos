@@ -48,6 +48,6 @@ Em **Progresso > Corpo > Conta** o app pede o e-mail e manda um link mágico (se
 - **Primeiro login de um aparelho:** baixa o que está na conta; se o aparelho já tinha dados de um dia, os dele vencem.
 - **Gráficos:** o conteúdo fica nas tabelas de sempre, então as visões `v_*` já refletem tudo.
 
-**Configuração única no Supabase** (Authentication > URL Configuration): o endereço do app no GitHub Pages em *Site URL* e *Redirect URLs*.
+**Configuração única no Supabase** (Authentication > URL Configuration): coloque o endereço do app, com a barra final (`https://eduviva.github.io/app-de-treinos/`), em *Site URL* e em *Redirect URLs*. O app pede ao Supabase que o link do e-mail volte para esse endereço (parâmetro `redirect_to`); se ele não estiver na lista de *Redirect URLs*, o Supabase ignora o pedido e manda para o *Site URL*. Se o link chegar sem `/app-de-treinos/`, é sinal de que o endereço não está na lista ou de que o *Site URL* está sem o caminho.
 
 Limite: o cronômetro em andamento e o dia aberto na tela não sincronizam; o resto sim.
