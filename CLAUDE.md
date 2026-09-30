@@ -30,6 +30,7 @@ App pessoal de treino do Eduardo (25 anos, treina na Champion Body Gravataí). H
   - `updated_at` resolve conflitos; `deleted_at` apaga sem perder o histórico.
   - `workout_sessions.local_date` é a data do calendário do usuário, nunca derivada de um horário UTC.
 - Funções:
+  - `export_app_backup()` devolve os registros do usuário logado no formato do `localStorage` (inverso do import).
   - `clone_program(program_id, start_date)` copia o programa-modelo para o usuário e o inscreve nele.
   - `import_app_backup(jsonb)` importa o texto de "Copiar backup" do app. É idempotente pelo `source_key`.
 - Visões para gráficos: `v_exercise_best_sets`, `v_weekly_volume`, `v_weekly_sets_by_muscle`.
@@ -39,5 +40,5 @@ App pessoal de treino do Eduardo (25 anos, treina na Champion Body Gravataí). H
 1. Publicar no GitHub Pages (instruções no README).
 2. ~~Login com link mágico~~ feito (fetch direto ao GoTrue, sessão em `treino-eduardo-v2-auth`).
 3. ~~Envio ao banco~~ feito: `syncNow()` chama `import_app_backup` após login e a cada `save()` (debounce de 8 s). Falta configurar Site URL/Redirect URLs no Supabase Auth.
-4. Falta o caminho de volta: baixar do banco para um aparelho novo e resolver conflitos por `updated_at` (hoje o envio é só de ida).
+4. ~~Caminho de volta~~ feito: `pullNow()` chama `export_app_backup()` e `mergeRemote()` junta sem sobrescrever o local (local vence). Roda uma vez por login (`auth.pulled`) e no botão "Baixar do banco". `import_app_backup` apaga e recria as sessões, então `updated_at` não serve de critério; apagar e sincronizar exclusões (`deleted_at`) e guardar `session.plan` no banco ficam para depois.
 5. Depois: gráficos lendo as visões do banco e telas para criar exercícios e fichas próprias.

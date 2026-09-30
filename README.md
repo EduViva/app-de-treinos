@@ -25,7 +25,7 @@ O endereço novo guarda os dados separado do artefato do Claude. Para levar o hi
 
 ## Banco de dados (Supabase)
 
-Projeto `sgqsriitdwmpylghrytx` (Pessoal). As quatro migrations desta pasta já estão aplicadas:
+Projeto `sgqsriitdwmpylghrytx` (Pessoal). As cinco migrations desta pasta já estão aplicadas:
 
 | Migration | O que faz |
 |---|---|
@@ -33,6 +33,7 @@ Projeto `sgqsriitdwmpylghrytx` (Pessoal). As quatro migrations desta pasta já e
 | `catalogo_exercicios` | 38 grupos musculares e 88 exercícios públicos |
 | `programa_modelo` | programa de 12 semanas: fichas A–E e pescoço, agenda semanal e 24 corridas planejadas |
 | `ajustes_desempenho` | índices e políticas ajustados pelo Supabase Advisor |
+| `exportar_backup` | função `export_app_backup()`, o inverso de `import_app_backup`: devolve os registros do usuário no formato do app |
 
 O banco é multiusuário: cada pessoa só enxerga os próprios registros, e o catálogo público é somente leitura.
 
@@ -42,4 +43,6 @@ Em **Progresso > Corpo > Conta** o app pede o e-mail e manda um link mágico (se
 
 **Configuração única no Supabase** (Authentication > URL Configuration): coloque o endereço do app no GitHub Pages em *Site URL* e em *Redirect URLs*. Sem isso o link do e-mail não volta para o app.
 
-Ainda não existe o caminho de volta (baixar do banco para um aparelho novo). Por enquanto, um aparelho novo recebe os dados via **Restaurar**.
+**Caminho de volta.** No primeiro login de cada aparelho, o app baixa os registros da conta (`export_app_backup`) e junta com o que já existe, antes de enviar. O que está no aparelho nunca é sobrescrito: só entram dias, exercícios, corridas e pesos que faltam aqui. O botão **Baixar do banco** repete isso quando quiser.
+
+Limites: a troca ou mudança de dia de um treino e o cronômetro em andamento não são guardados no banco, então não voltam. Apagar um registro no aparelho não apaga no banco, e ele pode voltar no próximo download.

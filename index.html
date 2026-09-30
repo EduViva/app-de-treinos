@@ -556,7 +556,7 @@ function sbFetch(path,opt,token){
 function setSession(j,email){
   const old=auth||{};
   auth={access:j.access_token,refresh:j.refresh_token,exp:Date.now()+(j.expires_in||3600)*1000,
-    email:email||(j.user&&j.user.email)||old.email,uid:(j.user&&j.user.id)||old.uid,lastSync:old.lastSync||null,imported:old.imported||false};
+    email:email||(j.user&&j.user.email)||old.email,uid:(j.user&&j.user.id)||old.uid,lastSync:old.lastSync||null,imported:old.imported||false,pulled:old.pulled||false};
   saveAuth();
 }
 async function freshToken(){
@@ -573,7 +573,7 @@ function readLinkHash(){
   history.replaceState(null,'',location.pathname+location.search);
   if(!m.get('access_token'))return false;
   const exp=Number(m.get('expires_in'))||3600;
-  auth={access:m.get('access_token'),refresh:m.get('refresh_token'),exp:Date.now()+exp*1000,email:null,uid:null,lastSync:null,imported:false};
+  auth={access:m.get('access_token'),refresh:m.get('refresh_token'),exp:Date.now()+exp*1000,email:null,uid:null,lastSync:null,imported:false,pulled:false};
   try{const pl=JSON.parse(atob(auth.access.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));auth.uid=pl.sub;auth.email=pl.email||null}catch(e){}
   saveAuth();return true;
 }
@@ -581,11 +581,40 @@ async function sendLink(email){
   const r=await sbFetch('/auth/v1/otp',{method:'POST',body:JSON.stringify({email:email,create_user:true,email_redirect_to:location.origin+location.pathname})});
   if(!r.ok){let m='';try{m=(await r.json()).msg||''}catch(e){}throw new Error(m||'Não consegui enviar o link.')}
 }
+/* Junta o que veio do banco com o que já existe aqui. O que está no aparelho nunca é sobrescrito. */
+function mergeRemote(o){
+  let n=0;
+  if(!o||typeof o!=='object')return 0;
+  if(!store.startDate&&o.startDate){store.startDate=o.startDate}
+  (o.weights||[]).forEach(function(w){if(w&&w.date&&!store.weights.some(function(x){return x.date===w.date})){store.weights.push({date:w.date,kg:w.kg,waist:w.waist==null?null:w.waist,arm:w.arm==null?null:w.arm});n++}});
+  Object.keys(o.sessions||{}).forEach(function(d){
+    const r=o.sessions[d],l=store.sessions[d];
+    if(!l){store.sessions[d]=r;n++;return}
+    if(!l.sets)l.sets={};if(!l.run)l.run={};
+    Object.keys(r.sets||{}).forEach(function(id){
+      if(!(l.sets[id]||[]).some(function(x){return x&&x.done})){l.sets[id]=r.sets[id];n++}
+    });
+    if(!runLogged(l)&&r.run&&r.run.km){l.run=r.run;n++}
+    if(!l.startedAt&&r.startedAt)l.startedAt=r.startedAt;
+    if(!l.finishedAt&&r.finishedAt)l.finishedAt=r.finishedAt;
+  });
+  return n;
+}
+async function pullNow(){
+  const tk=await freshToken();
+  const r=await sbFetch('/rest/v1/rpc/export_app_backup',{method:'POST',body:'{}'},tk);
+  if(!r.ok){let m='';try{m=(await r.json()).message||''}catch(e){}throw new Error(m||'Falha ao baixar.')}
+  const n=mergeRemote(await r.json());
+  if(n){flush()}
+  auth.pulled=true;saveAuth();
+  return n;
+}
 async function syncNow(){
   if(!auth||syncBusy||!navigator.onLine)return;
   syncBusy=true;syncErr='';
   try{
     flush();
+    if(!auth.pulled){const n=await pullNow();if(n){render();toast('Baixei '+n+(n===1?' registro':' registros')+' da sua conta.')}}
     const tk=await freshToken();
     const r=await sbFetch('/rest/v1/rpc/import_app_backup',{method:'POST',body:JSON.stringify({p:{v:store.v,startDate:store.startDate,weights:store.weights,sessions:store.sessions,prefs:store.prefs}})},tk);
     if(!r.ok){let m='';try{m=(await r.json()).message||''}catch(e){}throw new Error(m||'Falha ao enviar.')}
@@ -1230,7 +1259,7 @@ function authHtml(){
     const when=auth.lastSync?new Date(auth.lastSync).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):null;
     return '<p>Conectado como <b>'+esc(auth.email||'sua conta')+'</b>.</p><p class="fnote">'+(syncBusy?'Enviando…':when?'Último envio: '+when+'.':'Ainda não enviado.')+'</p>'
       +(syncErr?'<p class="goal">'+esc(syncErr)+'</p>':'')
-      +'<div class="row-actions"><button class="btn primary" id="syncBtn">Sincronizar agora</button><button class="btn" id="logoutBtn">Sair</button></div>';
+      +'<div class="row-actions"><button class="btn primary" id="syncBtn">Sincronizar agora</button><button class="btn" id="pullBtn">Baixar do banco</button><button class="btn" id="logoutBtn">Sair</button></div>';
   }
   return '<p>Entre para guardar seus treinos na nuvem. Você recebe um link por e-mail, sem senha.</p>'
     +(linkSent?'<p class="fnote">Link enviado para <b>'+esc(linkSent)+'</b>. Abra o e-mail neste celular e toque no link.</p>':'')
@@ -1442,6 +1471,10 @@ $view.addEventListener('click',function(e){
     sendLink(em).then(function(){linkSent=em;syncErr=''}).catch(function(err){syncErr=err.message==='Failed to fetch'?'Sem rede.':err.message}).then(render);return;
   }
   if(e.target.id==='syncBtn'){syncNow();render();return}
+  if(e.target.id==='pullBtn'){
+    e.target.disabled=true;e.target.textContent='Baixando…';
+    pullNow().then(function(n){syncErr='';render();toast(n?'Baixei '+n+(n===1?' registro.':' registros.'):'Nada novo no banco.')}).catch(function(err){syncErr=err.message==='offline'||err.message==='Failed to fetch'?'Sem rede.':err.message;render()});return;
+  }
   if(e.target.id==='logoutBtn'){const tk=auth&&auth.access;if(tk)sbFetch('/auth/v1/logout',{method:'POST'},tk).catch(function(){});auth=null;saveAuth();linkSent='';syncErr='';render();toast('Você saiu. Os dados continuam neste celular.');return}
   if(e.target.id==='bkCopy'){flush();const txt=JSON.stringify(store);const fb=function(){document.getElementById('bkArea').innerHTML='<p class="fnote" style="margin-top:12px">Selecione e copie o texto abaixo.</p><textarea class="in" id="bkOut" readonly></textarea>';const t=document.getElementById('bkOut');t.value=txt;t.focus();t.select()};try{if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(txt).then(function(){toast('Backup copiado. Cole num lugar seguro.')},fb);else fb()}catch(err){fb()}return}
   if(e.target.id==='bkShow'){document.getElementById('bkArea').innerHTML='<label class="fl" style="margin-top:12px">Cole o backup aqui. Ele substitui os registros deste celular.<textarea class="in" id="bkIn"></textarea></label><div class="row-actions"><button class="btn primary" id="bkApply">Restaurar backup</button></div>';return}
