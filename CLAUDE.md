@@ -9,6 +9,12 @@ App pessoal de treino do Eduardo (25 anos, treina na Champion Body Gravataí). H
   - `treino-eduardo-v2`: `{v:2, startDate, weights:[{date,kg,waist,arm}], sessions:{'AAAA-MM-DD':{sets:{exId:[{kg,reps,done,alt}]}, run:{km,min,sec,note,sw}, startedAt, finishedAt, plan}}, prefs:{sound}, activeDate, runDate}`
   - `treino-eduardo-v2-ui`: preferências de tela.
 - Telas: `ficha`, `corrida`, `comida`, `progresso` (abas) e `config` (Configurações, aberta pela engrenagem do Progresso; conta, bloco de 12 semanas, bipe, backup). Configuração nova vai em `vConfig()`, não em Progresso.
+- Páginas de consulta (Corrida, Comida, Progresso, Configurações) seguem o molde da Ficha, para parecerem o mesmo app:
+  - Cada aba tem a sua cartolina em `THEME` (corrida laranja, comida menta `--fM`, progresso e configurações areia `--fP`) e a cor muda com transição.
+  - Topo com `pgTop()` e abas de pasta com `pgTabs()` (as mesmas `.tab` da Ficha, presas ao topo ao rolar). A seção escolhida fica em `runTab`, `foodTab`, `progTab` (guardadas em `-ui`).
+  - Conteúdo em cartões `.sec` com borda de tinta. Pouco texto na página: o texto longo vai para a gaveta com `reg(chave,título,subtítulo,html)` e `data-sheet="chave"` (`openPlain`). `data-info` é só o detalhe de exercício da Ficha.
+  - Movimento: a página entra (`rise`) e a seção desliza para o lado de onde veio (`tabAnim`, classes `enter pg|sub dl|dr` em `#view`). Respeita `prefers-reduced-motion`.
+  - Skeuomorfismo: Comida usa a tabela nutricional de embalagem (`.nutri`) e o cupom do cardápio (`.receipt`); Corrida usa o número de peito (`.bib`, como na ficha de corrida), mostrador de cronômetro (`.lcds`) e a régua de ritmos (`.zn`). Ao criar uma tela nova, prefira um objeto real a uma tabela de texto.
 - Login: e-mail e senha (`pwLogin`, `pwSignup`, `pwSave`) e link por e-mail (`sendLink`, limitado a poucos e-mails por hora no Supabase). `redirect_to` vai na URL do `/auth/v1/otp` e do `/auth/v1/signup`, nunca no corpo.
 - Objetos principais:
   - `S`: fichas `infA`, `supA`, `infB`, `supB`, `treinoE`, `pescoco`. Os ids dos exercícios (`ia1`, `sa1`, …, `pc8`) são iguais a `template_items.legacy_code` no banco.
