@@ -23,6 +23,16 @@ Abra o `index.html` no navegador. Não precisa instalar nada.
 
 O endereço novo guarda os dados separado do artefato do Claude. Para levar o histórico, use **Copiar backup** no app antigo e **Restaurar** no novo.
 
+## Comida
+
+A aba **Comida** tem quatro partes:
+
+- **Cardápio:** seis refeições com calorias e macros (P proteína, C carboidrato, G gordura) e o total do dia contra a meta. Toque numa refeição para escolher entre 3 opções, ver a tabela nutricional dela e os alimentos, mudar a quantidade ou trocar um alimento por outro do mesmo grupo (a quantidade é calculada para dar a mesma proteína, carboidrato ou gordura).
+- **Buscar:** cerca de 100 alimentos com calorias e macros por porção usual ou por 100 g, filtro por grupo e ordem por proteína, carboidrato, gordura ou calorias. Cada alimento abre uma balança: digite ou ajuste a quantidade e a tabela nutricional acompanha. O que não estiver na lista dá para cadastrar pelo rótulo da embalagem.
+- **Metas** e **Dicas:** a meta do dia e as orientações de sempre.
+
+As escolhas do cardápio e os alimentos cadastrados ficam só neste aparelho (não vão para a conta). Os valores dos alimentos são médias arredondadas de tabelas de referência (TACO, USDA) e rótulos comuns; para produtos industrializados vale mais o rótulo.
+
 ## Banco de dados (Supabase)
 
 Projeto `sgqsriitdwmpylghrytx` (Pessoal). As seis migrations desta pasta já estão aplicadas:
