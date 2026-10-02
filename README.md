@@ -23,6 +23,18 @@ Abra o `index.html` no navegador. Não precisa instalar nada.
 
 O endereço novo guarda os dados separado do artefato do Claude. Para levar o histórico, use **Copiar backup** no app antigo e **Restaurar** no novo.
 
+## Meus treinos
+
+No topo do **Progresso**, o botão **Meus treinos** abre a tela onde você monta as suas próprias fichas (a mesma tela também abre pelo fim de **Trocar treino**, na Ficha):
+
+- **Novo treino:** em branco ou copiado de um treino do plano. Dê um nome, escolha a letra e a cor da ficha e adicione exercícios de uma biblioteca com 133 opções (ou crie o seu).
+- **Cada exercício** tem séries, repetições (de–até ou tempo), descanso, RIR, alternativa e anotação. Dá para ligar exercícios em bi-set e tri-set, marcar blocos opcionais e mudar a ordem.
+- **Dias fixos:** toque nos dias da semana em que o treino se repete. Vale a partir de hoje, sem mexer no que já foi feito.
+- **Fazer hoje** leva o treino para a Ficha, que funciona igual aos treinos do plano: séries, cronômetro, evolução por exercício, histórico e calendário.
+- Treino que já tem histórico é arquivado em vez de apagado, para os gráficos continuarem completos.
+
+Os treinos próprios e as séries anotadas neles ficam só neste aparelho e entram no backup das Configurações; ainda não sincronizam com a conta.
+
 ## Comida
 
 A aba **Comida** tem quatro partes:
